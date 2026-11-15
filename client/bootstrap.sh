@@ -29,6 +29,8 @@
 #   PB_PIN=sha256//...   expected TLS public-key pin
 #
 set -Eeuo pipefail
+# Same patterns and tool output on every machine, whatever its locale.
+export LC_ALL=C
 
 # Everything is inside { ... } so bash reads the whole script before running
 # any of it — required when the script arrives on stdin through a pipe.

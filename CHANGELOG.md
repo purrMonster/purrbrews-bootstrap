@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+- Fix: on machines with a UTF-8 locale the key sync rejected every key that
+  had a comment ("zero valid keys"), so bootstrapping failed. The client
+  scripts now run in the C locale.
+
 ## 1.0.0
 
 First release.

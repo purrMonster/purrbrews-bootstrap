@@ -17,6 +17,10 @@
 #   Config defaults to /etc/purrbrews-bootstrap/client.conf (KEY=value lines).
 #
 set -Eeuo pipefail
+# Patterns below must mean the same on every machine: in UTF-8 locales a
+# character range such as [ -~] follows the locale's sort order and can reject
+# valid keys. The C locale makes ranges plain byte ranges.
+export LC_ALL=C
 
 CONFIG="/etc/purrbrews-bootstrap/client.conf"
 DRY_RUN=false
@@ -80,7 +84,7 @@ esac
 # --- validate -----------------------------------------------------------------------
 # Only plain public keys: no authorized_keys options (command=, from=, ...).
 grep -q 'PRIVATE KEY' "$TMP/src" && die "The server sent something that looks like a private key. Leaving authorized_keys unchanged."
-key_re='^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/]+=*( [ -~]*)?$'
+key_re='^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/]+=*( [[:print:]]*)?$'
 : > "$TMP/keys"
 while IFS= read -r line || [[ -n "$line" ]]; do
   line="${line%$'\r'}"

@@ -250,6 +250,19 @@ class Live(unittest.TestCase):
         c = [c for c in data["clients"] if c["name"] == "test-box"][0]
         self.assertTrue(c["active"] and c["current"] and c["identified"])
 
+        # A UTF-8 locale must not change which keys are accepted (1.0.0 rejected
+        # every key with a comment there: its pattern used a locale-sorted range).
+        loc = self.tmp / "loc"
+        loc.mkdir()
+        made = shutil.which("localedef") and subprocess.run(
+            ["localedef", "-i", "en_US", "-f", "UTF-8", str(loc / "en_US.UTF-8")], capture_output=True).returncode == 0
+        if made:
+            ak.unlink()
+            r = subprocess.run(["bash", str(ROOT / "client" / "sync.sh"), "--config", str(conf)], capture_output=True, text=True,
+                               env={**os.environ, "LOCPATH": str(loc), "LC_ALL": "en_US.UTF-8", "LANG": "en_US.UTF-8"})
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn(KEY2, ak.read_text())
+
         # zero keys on the server: nothing changes on the client
         self.reset()
         before = ak.read_text()
@@ -276,6 +289,13 @@ class Keys(unittest.TestCase):
             pub = Path(f"{d}/k.pub").read_text().strip()
             want = subprocess.run(["ssh-keygen", "-lf", f"{d}/k.pub"], capture_output=True, text=True).stdout.split()[1]
             self.assertEqual(server.parse_public_key(pub)["fingerprint"], want)
+
+
+class Scripts(unittest.TestCase):
+    def test_client_scripts_pin_the_c_locale(self):
+        for name in ("sync.sh", "bootstrap.sh"):
+            head = (ROOT / "client" / name).read_text().split("\n{" if name == "bootstrap.sh" else "CONFIG=", 1)[0]
+            self.assertIn("export LC_ALL=C", head, name)
 
 
 class Release(unittest.TestCase):
