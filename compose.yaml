@@ -1,0 +1,44 @@
+# purrbrews-bootstrap — runs a released image.
+#
+#   docker compose up -d
+#   docker compose logs bootstrap     # admin token, TLS pin
+#   open http://localhost:8444
+#
+# Pin a release with BOOTSTRAP_VERSION in .env. To build from this checkout
+# instead:  docker compose -f compose.yaml -f compose.build.yaml up -d --build
+#
+name: purrbrews-bootstrap
+
+services:
+  bootstrap:
+    image: ${BOOTSTRAP_IMAGE:-ghcr.io/purrmonster/purrbrews-bootstrap}:${BOOTSTRAP_VERSION:-1.0.0}
+    container_name: purrbrews-bootstrap
+    restart: unless-stopped
+    # Run as the user who owns ./data, so the files stay yours.
+    user: "${BOOTSTRAP_UID:-1000}:${BOOTSTRAP_GID:-1000}"
+    ports:
+      # Clients (HTTPS, pinned). Set BOOTSTRAP_BIND to one address to publish
+      # it on that network only.
+      - "${BOOTSTRAP_BIND:-0.0.0.0}:${BOOTSTRAP_PORT:-8443}:8443"
+      # Admin page: this machine only. It decides which SSH keys every client
+      # trusts, so do not publish it wider without a reason.
+      - "127.0.0.1:${BOOTSTRAP_ADMIN_PORT:-8444}:8444"
+    environment:
+      BOOTSTRAP_PUBLIC_URL: ${BOOTSTRAP_PUBLIC_URL:-}
+      BOOTSTRAP_ADMIN_TOKEN: ${BOOTSTRAP_ADMIN_TOKEN:-}
+      BOOTSTRAP_ADMIN_HOSTS: ${BOOTSTRAP_ADMIN_HOSTS:-}
+    volumes:
+      # Everything the server remembers: keys, clients, settings, TLS key,
+      # admin token, optional payload/.
+      - ./data:/data
+      # Optional payload: files clients download (and may run) after key setup.
+      # Point BOOTSTRAP_PAYLOAD at any folder; the default is ./data/payload.
+      - ${BOOTSTRAP_PAYLOAD:-./data/payload}:/data/payload:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }

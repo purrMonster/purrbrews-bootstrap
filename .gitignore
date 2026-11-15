@@ -1,0 +1,7 @@
+# Everything the server remembers lives in data/: keys, clients, the TLS key,
+# the admin token. None of it belongs in the repository.
+data/
+.env
+__pycache__/
+*.pyc
+.DS_Store

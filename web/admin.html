@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bootstrap server</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --panel: #ffffff; --ink: #1c1b18; --muted: #6b6860; --line: #e2dfd6;
+    --accent: #1f6f5c; --accent-ink: #ffffff; --warn: #9a5b00; --warn-bg: #fff4dc;
+    --bad: #a3271f; --bad-bg: #fde9e6; --good: #1f6f5c; --good-bg: #e2f2ec; --code-bg: #f0eee7;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151614; --panel: #1e201d; --ink: #ecebe6; --muted: #9c9a92; --line: #32342f;
+      --accent: #5fc2a6; --accent-ink: #0d1b17; --warn: #f1c070; --warn-bg: #3a2e12;
+      --bad: #f29a90; --bad-bg: #40201c; --good: #7fd3bb; --good-bg: #1a3029; --code-bg: #262824;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 28px 20px 64px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 16px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 14px; font-size: 14px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+            padding: 18px 20px; margin-bottom: 16px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+  .row > label { flex: 1 1 180px; }
+  label { display: block; font-size: 13px; color: var(--muted); }
+  label.check { display: flex; gap: 8px; align-items: center; color: var(--ink); font-size: 14px; flex: 0 0 auto; }
+  input[type=text], input[type=password], input[type=number], select, textarea {
+    width: 100%; margin-top: 4px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px;
+    background: var(--bg); color: var(--ink); font: inherit; }
+  textarea { font-family: var(--mono); font-size: 13px; min-height: 76px; resize: vertical; }
+  input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 1px; }
+  button { font: inherit; padding: 8px 14px; border-radius: 7px; border: 1px solid var(--line);
+           background: var(--panel); color: var(--ink); cursor: pointer; white-space: nowrap; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  button.quiet { padding: 4px 10px; font-size: 13px; }
+  button.danger { color: var(--bad); }
+  button:disabled { opacity: .5; cursor: default; }
+  pre.cmd { background: var(--code-bg); border-radius: 8px; padding: 12px 14px; margin: 12px 0 8px;
+            font: 13px/1.55 var(--mono); white-space: pre-wrap; word-break: break-all; }
+  code { font-family: var(--mono); font-size: 13px; }
+  .pin { font-family: var(--mono); font-size: 13px; word-break: break-all; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-weight: 600; font-size: 12px; color: var(--muted); text-transform: uppercase;
+       letter-spacing: .04em; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 9px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  td.num { font-variant-numeric: tabular-nums; }
+  td.act { text-align: right; }
+  .fp { font-family: var(--mono); font-size: 12px; color: var(--muted); word-break: break-all; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge.good { background: var(--good-bg); color: var(--good); }
+  .badge.warn { background: var(--warn-bg); color: var(--warn); }
+  .badge.bad  { background: var(--bad-bg);  color: var(--bad); }
+  .empty { color: var(--muted); padding: 10px 0 2px; }
+  .note { background: var(--warn-bg); color: var(--warn); border-radius: 7px; padding: 8px 12px; font-size: 14px; margin: 0 0 12px; }
+  #msg { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); padding: 10px 16px; border-radius: 8px;
+         background: var(--ink); color: var(--bg); font-size: 14px; max-width: 90vw; display: none; }
+  #msg.err { background: var(--bad); color: #fff; }
+  .scroll { overflow-x: auto; }
+  #login { max-width: 420px; margin: 12vh auto 0; }
+  .meta { color: var(--muted); font-size: 13px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <section id="login" hidden>
+    <h1>Bootstrap server</h1>
+    <p class="sub">Sign in with the admin token. It is printed in the server's log at start and stored in <code>data/admin-token</code>.</p>
+    <form id="login-form">
+      <label>Admin token <input type="password" id="token" autocomplete="current-password" required></label>
+      <p><button class="primary" type="submit">Sign in</button></p>
+    </form>
+  </section>
+
+  <div id="app" hidden>
+    <header>
+      <h1>Bootstrap server</h1>
+      <span class="meta"><span id="summary"></span> · <button class="quiet" id="logout">Sign out</button></span>
+    </header>
+
+    <section aria-labelledby="h-add">
+      <h2 id="h-add">Add a client</h2>
+      <p class="sub">Run this on the new machine. It pins this server's TLS key, installs the listed SSH keys for the chosen user, and keeps them in step from then on.</p>
+      <p class="note" id="addr-note" hidden></p>
+      <div class="row">
+        <label>User whose keys are managed <input type="text" id="c-user" placeholder="the user running sudo" autocomplete="off" spellcheck="false"></label>
+        <label>Client name <input type="text" id="c-name" placeholder="its hostname" autocomplete="off" spellcheck="false"></label>
+        <label>Downloader <select id="c-tool"><option value="curl">curl</option><option value="wget">wget</option></select></label>
+      </div>
+      <div class="row" id="payload-row" hidden style="margin-top:10px">
+        <label>Arguments for the payload's entry script <input type="text" id="c-args" autocomplete="off" spellcheck="false"></label>
+        <label class="check"><input type="checkbox" id="c-skip"> Payload only (skip key setup)</label>
+      </div>
+      <pre class="cmd" id="cmd" aria-label="Command to run on the client"></pre>
+      <button class="primary" id="copy">Copy command</button>
+      <p class="meta" style="margin:12px 0 0">TLS pin: <span class="pin" id="pin"></span></p>
+    </section>
+
+    <section aria-labelledby="h-keys">
+      <h2 id="h-keys">SSH keys</h2>
+      <p class="sub">Public keys every client installs. Removing one here removes it from each client at its next sync.</p>
+      <div class="scroll"><table id="keys"><thead><tr><th>Label</th><th>Type</th><th>Fingerprint</th><th>Added</th><th></th></tr></thead><tbody></tbody></table></div>
+      <p class="empty" id="keys-empty" hidden>No keys yet. Clients refuse an empty list, so add one before bootstrapping a machine.</p>
+      <form id="key-form" style="margin-top:14px">
+        <label>Public key (one per line; the contents of a <code>.pub</code> file)
+          <textarea id="k-text" spellcheck="false" placeholder="ssh-ed25519 AAAA… you@laptop" required></textarea></label>
+        <div class="row" style="margin-top:8px">
+          <label>Label (optional, for a single key) <input type="text" id="k-label" maxlength="80" autocomplete="off"></label>
+          <button class="primary" type="submit">Add key</button>
+        </div>
+      </form>
+    </section>
+
+    <section aria-labelledby="h-clients">
+      <h2 id="h-clients">Clients</h2>
+      <p class="sub" id="clients-sub"></p>
+      <div class="scroll"><table id="clients"><thead><tr><th>Client</th><th>User</th><th>Address</th><th>Last pull</th><th>Status</th><th>Keys</th><th></th></tr></thead><tbody></tbody></table></div>
+      <p class="empty" id="clients-empty" hidden>No client has pulled the keys yet.</p>
+    </section>
+
+    <section aria-labelledby="h-settings">
+      <h2 id="h-settings">Settings</h2>
+      <p class="sub">The address is what clients are told to use, so it must be reachable from them.</p>
+      <form id="settings-form">
+        <div class="row">
+          <label>Server address <input type="text" id="s-url" placeholder="https://192.0.2.10:8443" autocomplete="off" spellcheck="false"></label>
+          <label>Sync every (minutes) <input type="number" id="s-min" min="5" max="1440" required></label>
+          <label>Default user <input type="text" id="s-user" placeholder="none" autocomplete="off" spellcheck="false"></label>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <label>Payload entry script <select id="s-entry"></select></label>
+          <button class="primary" type="submit">Save settings</button>
+        </div>
+        <p class="meta" id="payload-meta" style="margin:10px 0 0"></p>
+      </form>
+    </section>
+  </div>
+</main>
+<div id="msg" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let state = null;
+let dirtySettings = false;
+
+function toast(text, isError) {
+  const m = $("msg");
+  m.textContent = text; m.className = isError ? "err" : ""; m.style.display = "block";
+  clearTimeout(toast.t); toast.t = setTimeout(() => { m.style.display = "none"; }, isError ? 6000 : 2500);
+}
+
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method, credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "X-Bootstrap-Admin": "1" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* not JSON */ }
+  if (res.status === 401 && path !== "/api/login") { showLogin(); throw new Error("Sign in first."); }
+  if (!res.ok) throw new Error((data && data.error) || ("Request failed (" + res.status + ")"));
+  return data;
+}
+
+function showLogin() { $("app").hidden = true; $("login").hidden = false; $("token").focus(); }
+
+function ago(ts, now) {
+  const s = Math.max(0, now - ts);
+  if (s < 90) return "just now";
+  if (s < 5400) return Math.round(s / 60) + " min ago";
+  if (s < 129600) return Math.round(s / 3600) + " h ago";
+  return Math.round(s / 86400) + " days ago";
+}
+function day(ts) { return new Date(ts * 1000).toISOString().slice(0, 10); }
+function cell(text, cls) { const td = document.createElement("td"); if (cls) td.className = cls; td.textContent = text; return td; }
+function badge(text, kind) { const b = document.createElement("span"); b.className = "badge " + kind; b.textContent = text; return b; }
+function shq(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
+
+function serverUrl() {
+  const s = state.settings;
+  if (s.public_url) return s.public_url;
+  if (state.address_guess) return "https://" + state.address_guess + ":" + state.client_port;
+  return "https://<server-address>:" + state.client_port;
+}
+
+function renderCommand() {
+  const url = serverUrl();
+  const user = $("c-user").value.trim(), name = $("c-name").value.trim();
+  const args = [];
+  if (user) args.push("--user " + shq(user));
+  if (name) args.push("--name " + shq(name));
+  if ($("c-skip").checked && state.payload.files.length) args.push("--skip-keys");
+  const extra = $("c-args").value.trim();
+  if (extra && state.payload.entry) args.push("-- " + extra);
+  const get = $("c-tool").value === "wget"
+    ? "wget -qO- --no-check-certificate " + url + "/bootstrap.sh"
+    : "curl -kfsSL " + url + "/bootstrap.sh";
+  $("cmd").textContent = get + " \\\n  | sudo PB_PIN=" + shq(state.pin) + " bash -s --" + (args.length ? " " + args.join(" ") : "");
+  const note = $("addr-note");
+  if (!state.settings.public_url) {
+    note.hidden = false;
+    note.textContent = state.address_guess
+      ? "The server address is a guess (" + url + "). Confirm it under Settings so clients are always told the right one."
+      : "Set the server address under Settings: this page cannot tell which address clients reach the server on.";
+  } else { note.hidden = true; }
+}
+
+function render() {
+  const now = state.now;
+  $("pin").textContent = state.pin;
+  const active = state.clients.filter((c) => c.active).length;
+  $("summary").textContent = state.keys.length + (state.keys.length === 1 ? " key" : " keys") + " · " +
+    active + " of " + state.clients.length + " clients active · v" + state.version;
+
+  // keys
+  const kb = $("keys").tBodies[0]; kb.replaceChildren();
+  for (const k of state.keys) {
+    const tr = document.createElement("tr");
+    tr.append(cell(k.label || k.comment || "(no label)"), cell(k.type.replace("@openssh.com", "")), cell(k.fingerprint, "fp"), cell(day(k.added), "num"));
+    const td = document.createElement("td"); td.className = "act";
+    const b = document.createElement("button"); b.className = "quiet danger"; b.textContent = "Remove";
+    b.setAttribute("aria-label", "Remove key " + (k.label || k.fingerprint));
+    b.onclick = async () => {
+      if (!confirm("Remove this key? Every client drops it at its next sync.\n\n" + (k.label || "") + "\n" + k.fingerprint)) return;
+      try { state = await api("DELETE", "/api/keys/" + k.id); render(); toast("Key removed"); } catch (e) { toast(e.message, true); }
+    };
+    td.append(b); tr.append(td); kb.append(tr);
+  }
+  $("keys").hidden = !state.keys.length; $("keys-empty").hidden = !!state.keys.length;
+
+  // clients
+  $("clients-sub").textContent = "Machines that pull the keys from this server. Active means a pull within the last " +
+    state.active_window_minutes + " minutes (two sync intervals). Names are reported by the clients themselves.";
+  const cb = $("clients").tBodies[0]; cb.replaceChildren();
+  for (const c of state.clients) {
+    const tr = document.createElement("tr");
+    tr.append(cell(c.name || (c.identified ? "(unnamed)" : "(unidentified)")), cell(c.user || "–"), cell(c.ip, "num"), cell(ago(c.last_seen, now), "num"));
+    const st = document.createElement("td"); st.append(c.active ? badge("Active", "good") : badge("Not seen", "bad")); tr.append(st);
+    const kv = document.createElement("td"); kv.append(c.current ? badge("Current", "good") : badge("Pending", "warn")); tr.append(kv);
+    const td = document.createElement("td"); td.className = "act";
+    const b = document.createElement("button"); b.className = "quiet"; b.textContent = "Forget";
+    b.setAttribute("aria-label", "Forget client " + (c.name || c.ip));
+    b.onclick = async () => {
+      if (!confirm("Forget this client? It reappears if it pulls again; its keys are not touched.")) return;
+      try { state = await api("DELETE", "/api/clients/" + c.id); render(); } catch (e) { toast(e.message, true); }
+    };
+    td.append(b); tr.append(td); cb.append(tr);
+  }
+  $("clients").hidden = !state.clients.length; $("clients-empty").hidden = !!state.clients.length;
+
+  // settings (do not overwrite what is being typed)
+  if (!dirtySettings) {
+    $("s-url").value = state.settings.public_url || "";
+    $("s-min").value = state.settings.sync_minutes;
+    $("s-user").value = state.settings.default_user || "";
+    const sel = $("s-entry"); sel.replaceChildren(new Option("none", ""));
+    for (const f of state.payload.files) sel.append(new Option(f, f));
+    sel.value = state.payload.entry || "";
+    sel.disabled = !state.payload.files.length;
+  }
+  if (state.address_guess && !state.settings.public_url) $("s-url").placeholder = "https://" + state.address_guess + ":" + state.client_port;
+  $("payload-meta").textContent = state.payload.files.length
+    ? "Payload: " + state.payload.files.length + " file(s) in data/payload are served to clients, checksummed."
+    : "No payload. Put files in data/payload to have clients download them (and optionally run one) after key setup.";
+  $("payload-row").hidden = !state.payload.files.length;
+  $("c-args").disabled = !state.payload.entry;
+  $("c-args").placeholder = state.payload.entry ? "passed to " + state.payload.entry : "choose an entry script under Settings first";
+  $("c-user").placeholder = state.settings.default_user || "the user running sudo";
+  renderCommand();
+}
+
+async function load() {
+  try {
+    state = await api("GET", "/api/state");
+    $("login").hidden = true; $("app").hidden = false; render();
+  } catch (e) { /* showLogin already handled 401 */ }
+}
+
+$("login-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try { await api("POST", "/api/login", { token: $("token").value.trim() }); $("token").value = ""; await load(); }
+  catch (e) { toast(e.message, true); }
+});
+$("logout").onclick = async () => { try { await api("POST", "/api/logout", {}); } catch (e) { /* ignore */ } showLogin(); };
+$("key-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try {
+    state = await api("POST", "/api/keys", { keys: $("k-text").value, label: $("k-label").value });
+    $("k-text").value = ""; $("k-label").value = ""; render(); toast("Key added");
+  } catch (e) { toast(e.message, true); }
+});
+$("settings-form").addEventListener("input", () => { dirtySettings = true; });
+$("settings-form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try {
+    state = await api("POST", "/api/settings", {
+      public_url: $("s-url").value, sync_minutes: $("s-min").value,
+      default_user: $("s-user").value, payload_entry: $("s-entry").value });
+    dirtySettings = false; render(); toast("Settings saved");
+  } catch (e) { toast(e.message, true); }
+});
+for (const id of ["c-user", "c-name", "c-tool", "c-args", "c-skip"]) $(id).addEventListener("input", () => state && renderCommand());
+$("copy").onclick = async () => {
+  try { await navigator.clipboard.writeText($("cmd").textContent); toast("Command copied"); }
+  catch (e) { toast("Could not copy; select the command and copy it by hand.", true); }
+};
+setInterval(() => { if (!$("app").hidden) load(); }, 15000);
+load();
+</script>
+</body>
+</html>

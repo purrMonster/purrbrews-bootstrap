@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Shell syntax
+        run: bash -n client/bootstrap.sh && bash -n client/sync.sh && bash -n scripts/release.sh
+      - name: Image builds and answers
+        run: |
+          docker build -t purrbrews-bootstrap:ci .
+          mkdir data && chmod 777 data
+          docker run -d --name pb -p 8443:8443 -v "$PWD/data:/data" purrbrews-bootstrap:ci
+          for i in $(seq 1 20); do
+            curl -ksf https://127.0.0.1:8443/healthz && exit 0
+            sleep 1
+          done
+          docker logs pb
+          exit 1
