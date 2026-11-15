@@ -11,7 +11,7 @@ name: purrbrews-bootstrap
 
 services:
   bootstrap:
-    image: ${BOOTSTRAP_IMAGE:-ghcr.io/purrmonster/purrbrews-bootstrap}:${BOOTSTRAP_VERSION:-1.0.1}
+    image: ${BOOTSTRAP_IMAGE:-ghcr.io/purrmonster/purrbrews-bootstrap}:${BOOTSTRAP_VERSION:-1.1.0}
     container_name: purrbrews-bootstrap
     restart: unless-stopped
     # Run as the user who owns ./data, so the files stay yours.
