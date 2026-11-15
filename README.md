@@ -1,5 +1,7 @@
 # purrbrews-bootstrap
 
+[![release](https://github.com/purrMonster/purrbrews-bootstrap/actions/workflows/release.yml/badge.svg)](https://github.com/purrMonster/purrbrews-bootstrap/actions/workflows/release.yml)
+
 A small server that hands SSH public keys to machines and keeps them in step.
 
 You keep one list of public keys on an admin page. A new machine runs a one-line
