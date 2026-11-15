@@ -31,6 +31,10 @@ services:
       # Everything the server remembers: keys, clients, settings, TLS key,
       # admin token, optional payload/.
       - ./data:/data
+      # The client scripts (installer and key sync). Not part of the image:
+      # they are read from this folder on every request, so editing them (or
+      # a git pull) takes effect at once, with no rebuild and no restart.
+      - ${BOOTSTRAP_CLIENT:-./client}:/client:ro
       # Optional payload: files clients download (and may run) after key setup.
       # Point BOOTSTRAP_PAYLOAD at any folder; the default is ./data/payload.
       - ${BOOTSTRAP_PAYLOAD:-./data/payload}:/data/payload:ro

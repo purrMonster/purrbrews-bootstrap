@@ -91,6 +91,7 @@
     <section aria-labelledby="h-add">
       <h2 id="h-add">Add a client</h2>
       <p class="sub">Run this on the new machine. It pins this server's TLS key, installs the listed SSH keys for the chosen user, and keeps them in step from then on.</p>
+      <p class="note" id="scripts-note" hidden></p>
       <p class="note" id="addr-note" hidden></p>
       <div class="row">
         <label>User whose keys are managed <input type="text" id="c-user" placeholder="the user running sudo" autocomplete="off" spellcheck="false"></label>
@@ -277,6 +278,11 @@ function render() {
   $("c-args").disabled = !state.payload.entry;
   $("c-args").placeholder = state.payload.entry ? "passed to " + state.payload.entry : "choose an entry script under Settings first";
   $("c-user").placeholder = state.settings.default_user || "the user running sudo";
+  const miss = (state.client_scripts && state.client_scripts.missing) || [];
+  $("scripts-note").hidden = !miss.length;
+  $("scripts-note").textContent = miss.length
+    ? "Client scripts missing from the server's client/ folder: " + miss.join(", ") + ". New machines cannot bootstrap until they are there."
+    : "";
   renderCommand();
 }
 

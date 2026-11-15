@@ -183,7 +183,8 @@ class Live(unittest.TestCase):
         text = body.decode()
         self.assertEqual(st, 200)
         self.assertIn(f'BASE_URL="https://192.0.2.7:{self.cport}"', text)
-        self.assertNotIn("__", text.split("set -Eeuo pipefail", 1)[1].split("ETC_DIR", 1)[0])
+        self.assertNotIn("__", text.split("set -Eeuo pipefail", 1)[1].split("have_tty", 1)[0])
+        self.assertIn("/client/bootstrap.sh", text)        # the wrapper fetches the installer
         self.assertEqual(self.get("/bootstrap.sh", {"Host": 'x";rm -rf /;"'})[0], 400)
         self.app.store.update_settings({"public_url": "https://boot.example:9000"})
         self.assertIn('BASE_URL="https://boot.example:9000"', self.get("/bootstrap.sh", {"Host": "whatever"})[1].decode())
@@ -204,6 +205,40 @@ class Live(unittest.TestCase):
             self.assertIn('PAYLOAD_ENTRY="init.sh"', text); self.assertIn('HAS_PAYLOAD="1"', text)
         finally:
             shutil.rmtree(pdir)
+
+    def test_client_scripts_are_read_live_from_their_folder(self):
+        """The installer is a file beside the server, not part of it: a change on
+        disk is what the next client gets, with no restart."""
+        real = self.app.client_dir
+        tmp = self.tmp / "client-dir"
+        shutil.copytree(real, tmp)
+        self.app.client_dir = tmp
+        try:
+            self.assertEqual(self.get("/client/bootstrap.sh")[1], (real / "bootstrap.sh").read_bytes())
+            (tmp / "bootstrap.sh").write_text("#!/bin/sh\necho changed\n")
+            self.assertEqual(self.get("/client/bootstrap.sh")[1], b"#!/bin/sh\necho changed\n")
+            (tmp / "bootstrap.sh").unlink()
+            st, body, _ = self.get("/client/bootstrap.sh")
+            self.assertEqual(st, 503)
+            cookie = self.login()
+            _, data, _ = self.adm("GET", "/api/state", cookie=cookie)
+            self.assertEqual(data["client_scripts"]["missing"], ["bootstrap.sh"])
+            # nothing but plain script names is served from that folder
+            (tmp / "notes.txt").write_text("x")
+            os.symlink(self.tmp / "data" / "admin-token", tmp / "leak.sh")
+            for bad in ("/client/notes.txt", "/client/leak.sh", "/client/../server.py", "/client/sub/x.sh"):
+                self.assertIn(self.get(bad)[0], (404, 503), bad)
+                self.assertNotIn(self.app.token.encode(), self.get(bad)[1])
+        finally:
+            self.app.client_dir = real
+            shutil.rmtree(tmp)
+
+    def test_wrapper_is_the_only_script_in_the_image(self):
+        dockerfile = (ROOT / "Dockerfile").read_text()
+        copies = [ln for ln in dockerfile.splitlines() if ln.startswith("COPY")]
+        self.assertTrue(any("wrapper.sh" in ln for ln in copies))
+        self.assertFalse(any("client" in ln for ln in copies), copies)
+        self.assertNotIn("client", (ROOT / ".dockerignore").read_text())
 
     def test_secrets_not_reachable_from_client_port(self):
         for p in ("/api/state", "/", "/admin-token", "/state.json", "/certs/bootstrap.key"):
@@ -292,10 +327,15 @@ class Keys(unittest.TestCase):
 
 
 class Scripts(unittest.TestCase):
-    def test_client_scripts_pin_the_c_locale(self):
-        for name in ("sync.sh", "bootstrap.sh"):
-            head = (ROOT / "client" / name).read_text().split("\n{" if name == "bootstrap.sh" else "CONFIG=", 1)[0]
-            self.assertIn("export LC_ALL=C", head, name)
+    def test_scripts_pin_the_c_locale(self):
+        for path in (ROOT / "client" / "sync.sh", ROOT / "client" / "bootstrap.sh", ROOT / "wrapper.sh"):
+            head = "\n".join(path.read_text().splitlines()[:45])
+            self.assertIn("export LC_ALL=C", head, path.name)
+
+    def test_shell_syntax(self):
+        for path in (ROOT / "client" / "sync.sh", ROOT / "client" / "bootstrap.sh", ROOT / "wrapper.sh"):
+            r = subprocess.run(["bash", "-n", str(path)], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
 
 
 class Release(unittest.TestCase):

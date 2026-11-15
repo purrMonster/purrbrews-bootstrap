@@ -5,9 +5,11 @@ FROM python:3.13-alpine
 RUN apk add --no-cache openssl
 
 WORKDIR /app
-COPY VERSION server.py ./
-COPY client/ ./client/
+COPY VERSION server.py wrapper.sh ./
 COPY web/ ./web/
+# client/ (the installer and the key sync) is deliberately not copied in. Those
+# scripts change more often than the server, so they are mounted at /client and
+# read on every request: edit them and the next machine gets the new version.
 
 # Filled in by the release workflow; harmless defaults for a local build.
 ARG VERSION=dev
@@ -20,6 +22,7 @@ LABEL org.opencontainers.image.title="purrbrews-bootstrap" \
       org.opencontainers.image.source="${SOURCE}"
 
 ENV BOOTSTRAP_DATA=/data \
+    BOOTSTRAP_CLIENT_DIR=/client \
     BOOTSTRAP_BIND=0.0.0.0 \
     BOOTSTRAP_ADMIN_BIND=0.0.0.0 \
     PYTHONUNBUFFERED=1 \

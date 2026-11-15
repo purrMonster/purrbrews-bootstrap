@@ -4,8 +4,10 @@
 One small server, two listeners:
 
   client port (HTTPS, self-signed, pinned by clients)
-      /bootstrap.sh            one-line installer for a new client
-      /client/sync.sh          the key-sync script the installer puts on the client
+      /bootstrap.sh            the wrapper a new client runs (wrapper.sh): it pins
+                               this server's TLS key, then fetches the installer
+      /client/bootstrap.sh     the installer   } plain files read live from the
+      /client/sync.sh          the key sync    } client/ folder, not part of the image
       /keys/authorized_keys    the current public keys
       /files/...               optional payload (data/payload/), with SHA256SUMS
       /pin, /healthz
@@ -69,6 +71,8 @@ ID_RE = re.compile(r"^[a-f0-9]{16,64}$")
 USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 HOST_RE = re.compile(r"^(\[[0-9A-Fa-f:]+\]|[A-Za-z0-9.-]+)(:[0-9]{1,5})?$")
 URL_RE = re.compile(r"^https://(\[[0-9A-Fa-f:]+\]|[A-Za-z0-9.-]+)(:[0-9]{1,5})?$")
+CLIENT_SCRIPT_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}\.sh$")
+CLIENT_SCRIPTS_NEEDED = ("bootstrap.sh", "sync.sh")
 PAYLOAD_PATH_RE = re.compile(r"^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$")
 
 
@@ -349,6 +353,23 @@ class App:
             h.strip().lower() for h in os.environ.get("BOOTSTRAP_ADMIN_HOSTS", "").split(",") if h.strip()
         }
         self.client_port = int(os.environ.get("BOOTSTRAP_PORT", "8443"))
+        # The client scripts are deliberately outside the image: a folder read
+        # on every request, so they can change without a rebuild or a restart.
+        self.client_dir = Path(os.environ.get("BOOTSTRAP_CLIENT_DIR", str(HERE / "client")))
+
+    def client_script(self, name: str) -> bytes | None:
+        if not CLIENT_SCRIPT_RE.fullmatch(name):
+            return None
+        path = self.client_dir / name
+        try:
+            if path.is_symlink() or not path.is_file():
+                return None
+            return path.read_bytes()
+        except OSError:
+            return None
+
+    def missing_client_scripts(self) -> list[str]:
+        return [n for n in CLIENT_SCRIPTS_NEEDED if self.client_script(n) is None]
 
     def base_url(self, host_header: str | None) -> str:
         """Where clients should reach this server: the configured address, or
@@ -442,7 +463,7 @@ class ClientHandler(Handler):
             base = app.base_url(self.headers.get("Host"))
             if not base:
                 return self.text(400, "Cannot work out this server's address from the request. Set the server address on the admin page.")
-            script = (HERE / "client" / "bootstrap.sh").read_text(encoding="utf-8")
+            script = (HERE / "wrapper.sh").read_text(encoding="utf-8")
             s = store.state["settings"]
             script = (script.replace("__BASE_URL__", base)
                       .replace("__SYNC_MINUTES__", str(int(s["sync_minutes"])))
@@ -451,8 +472,13 @@ class ClientHandler(Handler):
                       .replace("__HAS_PAYLOAD__", "1" if store.payload_files() else "0"))
             return self.send_body(200, script.encode())
 
-        if path == "/client/sync.sh":
-            return self.send_body(200, (HERE / "client" / "sync.sh").read_bytes())
+        if path.startswith("/client/"):
+            name = path[len("/client/"):]
+            if CLIENT_SCRIPT_RE.fullmatch(name):
+                body = app.client_script(name)
+                if body is None:
+                    return self.text(503, f"{name} is not in the server's client/ folder. Put the client scripts there (see the README).")
+                return self.send_body(200, body)
 
         if path == "/files/SHA256SUMS":
             return self.send_body(200, store.payload_sums())
@@ -633,6 +659,7 @@ class AdminHandler(Handler):
             "version": VERSION, "now": now, "pin": app.pin, "settings": s, "keys": keys, "clients": clients,
             "keys_version": version, "client_port": app.client_port, "address_guess": app.guess_address(),
             "payload": {"files": store.payload_files(), "entry": store.payload_entry()},
+            "client_scripts": {"missing": app.missing_client_scripts()},
             "active_window_minutes": window // 60,
         }
 
@@ -696,6 +723,12 @@ def main() -> None:
     else:
         log(f"admin token: {app.token}   (also in {data_dir / 'admin-token'})")
     log(f"TLS pin: {app.pin}")
+    missing = app.missing_client_scripts()
+    if missing:
+        log(f"WARNING: client scripts missing from {app.client_dir}: {', '.join(missing)}. "
+            "New machines cannot bootstrap until they are there.")
+    else:
+        log(f"client scripts: read live from {app.client_dir}")
 
     def flusher():
         while True:

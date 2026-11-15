@@ -34,12 +34,13 @@ docker compose logs bootstrap      # the admin token and the TLS pin
 ```
 
 `compose.yaml` runs the release named by `BOOTSTRAP_VERSION` (set it in `.env`
-to pin or upgrade). Only `compose.yaml` is needed on the machine that runs it;
-no checkout required. Without Compose:
+to pin or upgrade). The machine that runs it needs two things from this
+repository: `compose.yaml` and the `client/` folder (see
+[Client scripts](#client-scripts)). A checkout gives you both. Without Compose:
 
 ```bash
 docker run -d --name purrbrews-bootstrap --restart unless-stopped \
-  --user "$(id -u):$(id -g)" -v "$PWD/data:/data" \
+  --user "$(id -u):$(id -g)" -v "$PWD/data:/data" -v "$PWD/client:/client:ro" \
   -p 8443:8443 -p 127.0.0.1:8444:8444 \
   ghcr.io/purrmonster/purrbrews-bootstrap:1.0.0
 ```
@@ -82,7 +83,7 @@ before the first start; it is imported once.
 
 ## What happens on a client
 
-`bootstrap.sh` (needs root, `bash`, and `curl` + `openssl`, which it installs if
+The one-liner (needs root, `bash`, and `curl` + `openssl`, which it installs if
 it can):
 
 - pins the server's TLS public key. With `PB_PIN=…` in the command (the admin
@@ -105,19 +106,47 @@ To remove it from a client: disable `purrbrews-bootstrap-sync.timer` (or delete
 `/etc/cron.d/purrbrews-bootstrap-sync`), delete `/etc/purrbrews-bootstrap` and the
 sync script, and remove the marked block from `authorized_keys`.
 
+## Client scripts
+
+What a new machine runs comes in two parts, on purpose:
+
+| Part | Where it lives | Changes |
+|---|---|---|
+| `wrapper.sh`, served as `/bootstrap.sh` | inside the image | rarely: it only decides whether to trust the server (the TLS pin), then fetches the installer over the pinned connection |
+| `client/bootstrap.sh` (the installer) and `client/sync.sh` (the key sync) | plain files in the `client/` folder, mounted into the container at `/client` | whenever you like |
+
+The server reads `client/` on every request. To change what new machines do,
+edit the file on the server machine, or `git pull`: the next machine gets the
+new version. No image build, no release, no restart. The command on the admin
+page stays the same.
+
+Two things follow from that:
+
+- **Releases are for the server, the admin page and the wrapper.** A change to
+  `client/` needs a commit, not a version.
+- **Machines already bootstrapped keep the `sync.sh` they installed.** To give
+  one a newer key sync, run the bootstrap command on it again.
+
+If `client/` is missing or incomplete, the server says so in its log and on the
+admin page, and the one-liner fails with a clear message instead of half
+installing. To serve the scripts from somewhere else, set `BOOTSTRAP_CLIENT` in
+`.env` (Docker) or `BOOTSTRAP_CLIENT_DIR` (without Docker).
+
 ## Payload (optional)
 
 Files in `data/payload/` are offered to clients at `/files/…` with a
 `SHA256SUMS` list. After key setup, `bootstrap.sh` downloads them to
-`/var/lib/purrbrews-bootstrap/payload`, checks every file, and, if you chose an
-entry script under Settings, runs it with:
+`/var/lib/purrbrews-bootstrap/payload` (root only) and checks every file. It
+leaves a readable copy in `~/purrbrews-bootstrap-payload` for the user who ran
+`sudo`, replaced on every run. If you chose an entry script under Settings, it
+then runs it, from the root-only original, with:
 
 | Variable | Meaning |
 |---|---|
 | `BOOTSTRAP_URL` | this server's address |
 | `BOOTSTRAP_PIN` | the TLS pin the client verified |
 | `BOOTSTRAP_CLIENT` | the client's name |
-| `BOOTSTRAP_PAYLOAD_DIR` | where the payload was downloaded |
+| `BOOTSTRAP_PAYLOAD_DIR` | where the verified payload is (the root-only original) |
 
 This is how a project hangs its own machine setup off the bootstrap without the
 server knowing anything about it. To serve a folder from another project, set
@@ -163,6 +192,8 @@ Everything is optional. With Docker, put these in `.env` (see `.env.example`).
 | `BOOTSTRAP_PUBLIC_URL` | | initial server address, instead of setting it on the page |
 | `BOOTSTRAP_DATA` | `./data` | where state is kept (without Docker) |
 | `BOOTSTRAP_PAYLOAD` | `./data/payload` | folder served as the payload (Docker) |
+| `BOOTSTRAP_CLIENT` | `./client` | folder the client scripts are read from (Docker) |
+| `BOOTSTRAP_CLIENT_DIR` | `./client` | the same, without Docker |
 
 ## Releases
 
@@ -191,8 +222,9 @@ To upgrade a running server, set the new `BOOTSTRAP_VERSION` and run
 VERSION              the release version (the tag must match)
 server.py            the server (Python standard library only)
 web/admin.html       the admin page
-client/bootstrap.sh  what a new machine runs
-client/sync.sh       the key sync installed on each machine
+wrapper.sh           the small script in the image: pins the server, fetches the installer
+client/bootstrap.sh  the installer a new machine runs   } read live from this folder,
+client/sync.sh       the key sync installed on each one } never built into the image
 compose.yaml         run a released image;  compose.build.yaml  build locally
 scripts/release.sh   cut a release
 .github/workflows/   ci.yml (tests on every push), release.yml (publish on a tag)
