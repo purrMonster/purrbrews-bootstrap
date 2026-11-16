@@ -332,6 +332,23 @@ class Scripts(unittest.TestCase):
             head = "\n".join(path.read_text().splitlines()[:45])
             self.assertIn("export LC_ALL=C", head, path.name)
 
+    def test_installer_lists_its_steps(self):
+        r = subprocess.run(["bash", str(ROOT / "client" / "bootstrap.sh"), "--list-steps"], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        steps = r.stdout.split()
+        self.assertEqual(steps, ["hostname", "timezone", "packages", "user", "keys", "ssh", "power",
+                                 "journald", "docker", "firewall", "payload"])
+        text = (ROOT / "client" / "bootstrap.sh").read_text()
+        for s in steps:                              # every listed step has a function
+            self.assertIn(f"step_{s}() {{", text, s)
+        self.assertLess(steps.index("keys"), steps.index("ssh"))          # never harden before keys exist
+        self.assertLess(steps.index("docker"), steps.index("firewall"))   # ufw-docker needs Docker
+
+    def test_installer_refuses_to_run_outside_the_wrapper(self):
+        env = {k: v for k, v in os.environ.items() if not k.startswith("PB_")}
+        r = subprocess.run(["bash", str(ROOT / "client" / "bootstrap.sh")], capture_output=True, text=True, env=env)
+        self.assertNotEqual(r.returncode, 0)
+
     def test_shell_syntax(self):
         for path in (ROOT / "client" / "sync.sh", ROOT / "client" / "bootstrap.sh", ROOT / "wrapper.sh"):
             r = subprocess.run(["bash", "-n", str(path)], capture_output=True, text=True)

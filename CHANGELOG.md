@@ -1,5 +1,12 @@
 # Changelog
 
+## Client scripts (no release needed; they are read live from `client/`)
+
+- 2026-11-16: the installer now prepares the whole machine, in steps:
+  hostname, timezone, packages, user, keys, ssh, power, journald, docker,
+  firewall, payload. Choose with `--only` / `--skip`; `--only keys` is the old
+  behaviour. Site settings are a block at the top of `client/bootstrap.sh`.
+
 ## 1.1.0
 
 - The installer is no longer built into the image. The image carries only a

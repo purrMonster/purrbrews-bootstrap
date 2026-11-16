@@ -5,7 +5,9 @@
 A small server that hands SSH public keys to machines and keeps them in step.
 
 You keep one list of public keys on an admin page. A new machine runs a one-line
-command, pins the server's TLS key, and from then on pulls the list on a timer.
+command, pins the server's TLS key, gets set up as a server (packages, a sudo
+user, key-only SSH, Docker, a firewall), and from then on pulls the key list on
+a timer.
 Add a key and every machine has it by the next sync; remove it and it is gone
 everywhere. The admin page also shows which machines are pulling.
 
@@ -83,28 +85,55 @@ before the first start; it is imported once.
 
 ## What happens on a client
 
-The one-liner (needs root, `bash`, and `curl` + `openssl`, which it installs if
-it can):
+The one-liner needs root, `bash`, and `curl` + `openssl` (installed if missing).
+It first pins the server's TLS public key: with `PB_PIN=…` in the command (the
+admin page includes it) the check is strict; without it, it shows the pin and
+asks. Then the installer turns the fresh install into a ready server, one step
+at a time. Every step is safe to run again.
 
-- pins the server's TLS public key. With `PB_PIN=…` in the command (the admin
-  page includes it) the check is strict; without it, it shows the pin and asks.
-- writes `/etc/purrbrews-bootstrap/client.conf` and installs
-  `/usr/local/sbin/purrbrews-bootstrap-sync`.
-- syncs the keys into a marked block in the user's `~/.ssh/authorized_keys`.
-  Lines outside the block are never touched.
-- schedules the sync: a systemd timer, or `/etc/cron.d` where there is no systemd.
+| Step | What it does |
+|---|---|
+| `hostname` | renames the machine. Only with `--hostname NAME` |
+| `timezone` | sets the timezone. Only if one is configured or `--timezone` is given |
+| `packages` | full upgrade, base tools, unattended security upgrades (apt systems) |
+| `user` | makes sure the managed user exists, can `sudo`, and that sudo asks for a password |
+| `keys` | installs the key sync, pulls the SSH public keys into a marked block of `~/.ssh/authorized_keys`, and schedules it (systemd timer, or cron) |
+| `ssh` | key-only SSH: no passwords, no root login, only the allowed users. Refuses if the user has no keys, and asks first when you are connected over SSH |
+| `power` | never sleeps: lid ignored, suspend and hibernate masked |
+| `journald` | system log kept on disk, capped in size |
+| `docker` | Docker Engine and the compose plugin from Docker's repository, with log rotation (Debian and Ubuntu) |
+| `firewall` | UFW: incoming denied except SSH from the local network; `ufw-docker` (checksum-pinned) keeps published container ports closed until allowed |
+| `payload` | downloads the server's payload, verifies it, runs its entry script |
 
-The sync is fail-safe. If the server is unreachable it changes nothing and exits
-`75` (not a failure). If a different TLS key answers, or the server returns no
-valid keys, it changes nothing and fails loudly. An outage never looks like
-"revoke everything".
+A step that does not apply to the machine (no apt, no systemd, another
+distribution) is skipped with a warning, and the warnings are listed at the end.
 
-Options: `--user NAME`, `--name NAME`, `--skip-keys`, `--yes`, and `--` followed
-by arguments for the payload's entry script.
+Choose steps with `--only "keys ssh"` or `--skip "docker firewall"`;
+`--list-steps` prints them. To get only the key sync, as in 1.0: `--only keys`.
 
-To remove it from a client: disable `purrbrews-bootstrap-sync.timer` (or delete
-`/etc/cron.d/purrbrews-bootstrap-sync`), delete `/etc/purrbrews-bootstrap` and the
-sync script, and remove the marked block from `authorized_keys`.
+Other options: `--user NAME` (the managed user), `--name NAME` (how the machine
+appears in the client list), `--hostname NAME`, `--timezone ZONE`, `--yes`
+(ask nothing), and `--` followed by arguments for the payload's entry script.
+
+Site settings (timezone, extra packages, who may log in over SSH, the local
+network, which steps run by default) are a block at the top of
+`client/bootstrap.sh`. Edit it on the server machine; the next client gets it.
+
+**After the firewall step, nothing but SSH gets in.** A service you add later
+needs its port opened: `ufw allow …` for a host service, `ufw-docker allow …`
+for a container.
+
+The key sync is fail-safe. If the server is unreachable it changes nothing and
+exits `75` (not a failure). If a different TLS key answers, or the server
+returns no valid keys, it changes nothing and fails loudly. An outage never
+looks like "revoke everything".
+
+To remove the key sync from a client: disable `purrbrews-bootstrap-sync.timer`
+(or delete `/etc/cron.d/purrbrews-bootstrap-sync`), delete
+`/etc/purrbrews-bootstrap` and the sync script, and remove the marked block
+from `authorized_keys`. The other steps leave files marked
+"Managed by purrbrews-bootstrap" (under `/etc/ssh/sshd_config.d`,
+`/etc/systemd/*.conf.d`, `/etc/apt/apt.conf.d`).
 
 ## Client scripts
 
